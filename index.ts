@@ -340,11 +340,15 @@ BBPlugin.register("mcp", {
                 };
               }
 
-              console.log('[MCP Server] Sending response:', JSON.stringify(response).substring(0, 200));
+              const responseBody = JSON.stringify(response);
+              console.log('[MCP Server] Sending response:', responseBody.substring(0, 200));
 
-              // Send the response
-              res.writeHead(200, { 'Content-Type': 'application/json' });
-              res.end(JSON.stringify(response));
+              // Send the response with Content-Length header
+              res.writeHead(200, {
+                'Content-Type': 'application/json',
+                'Content-Length': Buffer.byteLength(responseBody).toString()
+              });
+              res.end(responseBody);
 
               console.log('[MCP Server] Response sent successfully');
               console.log('[MCP Server] Headers sent?', headersSent);
@@ -360,13 +364,19 @@ BBPlugin.register("mcp", {
                   message: `Internal error: ${err}`
                 }
               };
-              res.writeHead(500, { 'Content-Type': 'application/json' });
-              res.end(JSON.stringify(response));
+              const errorBody = JSON.stringify(response);
+              // JSON-RPC errors should still return 200 OK - error is in the response body
+              res.writeHead(200, {
+                'Content-Type': 'application/json',
+                'Content-Length': Buffer.byteLength(errorBody).toString()
+              });
+              res.end(errorBody);
             }
           } catch (error) {
             console.error("Request handling error:", error);
-            socket.write("HTTP/1.1 500 Internal Server Error\r\nContent-Type: application/json\r\n\r\n");
-            socket.write(JSON.stringify({ error: "Internal server error" }));
+            const errorBody = JSON.stringify({ error: "Internal server error" });
+            socket.write(`HTTP/1.1 500 Internal Server Error\r\nContent-Type: application/json\r\nContent-Length: ${Buffer.byteLength(errorBody)}\r\n\r\n`);
+            socket.write(errorBody);
             socket.end();
           }
         });
