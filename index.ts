@@ -37,6 +37,8 @@ BBPlugin.register("mcp", {
     console.log('[MCP Plugin] Getting server instance...');
     currentServer = getServer();
     console.log('[MCP Plugin] Server instance created:', !!currentServer);
+    console.log('[MCP Plugin] Server type:', currentServer.constructor.name);
+    console.log('[MCP Plugin] Server has registerTool?', typeof currentServer.registerTool === 'function');
 
     console.log('[MCP Plugin] Setting up UI...');
     uiSetup({

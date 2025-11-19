@@ -82,6 +82,7 @@ export function createTool<T extends z.ZodRawShape>(
 
   // Register with server if enabled
   if (enabled) {
+    console.log('[Tool Factory] Registering tool:', name);
     getServer().registerTool(
       name,
       {
@@ -90,9 +91,18 @@ export function createTool<T extends z.ZodRawShape>(
         inputSchema: tool.parameters.shape,
       },
       async (args: z.infer<typeof tool.parameters>) => {
-        return await tool.execute(args);
+        console.log('[Tool Factory] Tool handler called:', name, 'with args:', args);
+        try {
+          const result = await tool.execute(args);
+          console.log('[Tool Factory] Tool handler completed:', name, 'result:', result);
+          return result;
+        } catch (error) {
+          console.error('[Tool Factory] Tool handler error:', name, error);
+          throw error;
+        }
       }
     );
+    console.log('[Tool Factory] Tool registered successfully:', name);
   }
 
   tools[name] = {
