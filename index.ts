@@ -109,14 +109,25 @@ BBPlugin.register("mcp", {
             };
             
             let headersSent = false;
+            let statusCode = 200;
             const res = {
+              get headersSent() {
+                return headersSent;
+              },
+              get statusCode() {
+                return statusCode;
+              },
+              set statusCode(code: number) {
+                statusCode = code;
+              },
               writeHead: (status: number, headers?: any) => {
                 if (headersSent) return;
                 headersSent = true;
-                
+                statusCode = status;
+
                 const statusText = status === 200 ? "OK" : status === 404 ? "Not Found" : "Internal Server Error";
                 let response = `HTTP/1.1 ${status} ${statusText}\r\n`;
-                
+
                 if (headers) {
                   for (const [key, value] of Object.entries(headers)) {
                     response += `${key}: ${value}\r\n`;
@@ -125,12 +136,25 @@ BBPlugin.register("mcp", {
                 response += "\r\n";
                 socket.write(response);
               },
-              write: (data: string) => socket.write(data),
+              write: (data: string) => {
+                if (!headersSent) {
+                  // If headers haven't been sent, send them with default status
+                  res.writeHead(statusCode);
+                }
+                socket.write(data);
+              },
               end: (data?: string) => {
+                if (!headersSent) {
+                  // If headers haven't been sent, send them with default status
+                  res.writeHead(statusCode);
+                }
                 if (data) socket.write(data);
                 socket.end();
               },
               on: () => {},
+              once: () => {},
+              emit: () => true,
+              removeListener: () => {},
               setHeader: () => {},
               getHeader: () => undefined,
             };
