@@ -110,7 +110,8 @@ BBPlugin.register("mcp", {
             
             let headersSent = false;
             let statusCode = 200;
-            const res = {
+            let finished = false;
+            const res: any = {
               get headersSent() {
                 return headersSent;
               },
@@ -120,43 +121,99 @@ BBPlugin.register("mcp", {
               set statusCode(code: number) {
                 statusCode = code;
               },
-              writeHead: (status: number, headers?: any) => {
-                if (headersSent) return;
+              get finished() {
+                return finished;
+              },
+              get writableEnded() {
+                return finished;
+              },
+              get writableFinished() {
+                return finished;
+              },
+              statusMessage: "OK",
+              writeHead: (status: number, statusMessageOrHeaders?: any, headers?: any) => {
+                if (headersSent) return res;
                 headersSent = true;
                 statusCode = status;
+
+                // Handle both (status, headers) and (status, statusMessage, headers) signatures
+                let actualHeaders = headers;
+                if (typeof statusMessageOrHeaders === 'string') {
+                  res.statusMessage = statusMessageOrHeaders;
+                } else if (statusMessageOrHeaders) {
+                  actualHeaders = statusMessageOrHeaders;
+                }
 
                 const statusText = status === 200 ? "OK" : status === 404 ? "Not Found" : "Internal Server Error";
                 let response = `HTTP/1.1 ${status} ${statusText}\r\n`;
 
-                if (headers) {
-                  for (const [key, value] of Object.entries(headers)) {
+                if (actualHeaders) {
+                  for (const [key, value] of Object.entries(actualHeaders)) {
                     response += `${key}: ${value}\r\n`;
                   }
                 }
                 response += "\r\n";
                 socket.write(response);
+                return res;
               },
-              write: (data: string) => {
+              flushHeaders: () => {
                 if (!headersSent) {
-                  // If headers haven't been sent, send them with default status
+                  res.writeHead(statusCode);
+                }
+                return res;
+              },
+              write: (data: string | Buffer, encodingOrCallback?: any, callback?: any) => {
+                if (!headersSent) {
                   res.writeHead(statusCode);
                 }
                 socket.write(data);
+
+                // Call callback if provided
+                const cb = typeof encodingOrCallback === 'function' ? encodingOrCallback : callback;
+                if (cb) {
+                  setTimeout(cb, 0);
+                }
+                return true;
               },
-              end: (data?: string) => {
+              end: (dataOrCallback?: any, encodingOrCallback?: any, callback?: any) => {
+                if (finished) return res;
+
                 if (!headersSent) {
-                  // If headers haven't been sent, send them with default status
                   res.writeHead(statusCode);
                 }
+
+                // Handle different signatures of end()
+                let data = undefined;
+                let cb = undefined;
+
+                if (typeof dataOrCallback === 'function') {
+                  cb = dataOrCallback;
+                } else {
+                  data = dataOrCallback;
+                  cb = typeof encodingOrCallback === 'function' ? encodingOrCallback : callback;
+                }
+
                 if (data) socket.write(data);
                 socket.end();
+                finished = true;
+
+                if (cb) {
+                  setTimeout(cb, 0);
+                }
+                return res;
               },
-              on: () => {},
-              once: () => {},
+              on: () => res,
+              once: () => res,
               emit: () => true,
-              removeListener: () => {},
-              setHeader: () => {},
+              removeListener: () => res,
+              removeAllListeners: () => res,
+              setHeader: () => res,
               getHeader: () => undefined,
+              getHeaders: () => ({}),
+              hasHeader: () => false,
+              removeHeader: () => res,
+              addTrailers: () => {},
+              setTimeout: () => res,
             };
             
             // Create transport for this request
