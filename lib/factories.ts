@@ -33,6 +33,11 @@ interface ToolDefinition {
 const toolDefinitions: Record<string, ToolDefinition> = {};
 
 /**
+ * Store tool handlers for direct invocation
+ */
+const toolHandlers: Record<string, (args: any) => Promise<{ content: Array<{ type: string; text: string }>; structuredContent?: any }>> = {};
+
+/**
  * Creates a new MCP tool and registers it with the server using the official SDK.
  * @param suffix - The tool name suffix (will be prefixed with "blockbench_").
  * @param tool - The tool configuration.
@@ -80,8 +85,23 @@ export function createTool<T extends z.ZodRawShape>(
   // Store tool definition
   toolDefinitions[name] = toolDef;
 
+  // Store handler for direct invocation
+  const handler = async (args: z.infer<typeof tool.parameters>) => {
+    console.log('[Tool Factory] Tool handler called:', name, 'with args:', args);
+    try {
+      const result = await tool.execute(args);
+      console.log('[Tool Factory] Tool handler completed:', name, 'result:', result);
+      return result;
+    } catch (error) {
+      console.error('[Tool Factory] Tool handler error:', name, error);
+      throw error;
+    }
+  };
+  toolHandlers[name] = handler;
+
   // Register with server if enabled
   if (enabled) {
+    console.log('[Tool Factory] Registering tool:', name);
     getServer().registerTool(
       name,
       {
@@ -89,10 +109,9 @@ export function createTool<T extends z.ZodRawShape>(
         description: toolDef.description,
         inputSchema: tool.parameters.shape,
       },
-      async (args: z.infer<typeof tool.parameters>) => {
-        return await tool.execute(args);
-      }
+      handler
     );
+    console.log('[Tool Factory] Tool registered successfully:', name);
   }
 
   tools[name] = {
@@ -119,6 +138,24 @@ export function getEnabledToolDefinitions() {
   return Object.fromEntries(
     Object.entries(toolDefinitions).filter(([name]) => tools[name]?.enabled)
   );
+}
+
+/**
+ * Calls a tool handler directly by name
+ * @param name - The tool name
+ * @param args - The arguments to pass to the tool
+ * @returns The tool result
+ * @throws If the tool doesn't exist or is not enabled
+ */
+export async function callToolHandler(name: string, args: any) {
+  const handler = toolHandlers[name];
+  if (!handler) {
+    throw new Error(`Tool "${name}" not found`);
+  }
+  if (!tools[name]?.enabled) {
+    throw new Error(`Tool "${name}" is not enabled`);
+  }
+  return await handler(args);
 }
 
 /**
