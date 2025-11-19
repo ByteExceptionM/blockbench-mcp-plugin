@@ -21,6 +21,7 @@ let currentServer: McpServer | null = null;
 let currentTransport: StreamableHTTPServerTransport | null = null;
 let expressApp: any = null;
 let httpServer: any = null;
+let activeConnections: Map<string, any> = new Map();
 
 BBPlugin.register("mcp", {
   version: VERSION,
@@ -249,64 +250,97 @@ BBPlugin.register("mcp", {
               setTimeout: () => res,
             };
             
-            // Create transport for this request
-            console.log('[MCP Server] Creating StreamableHTTPServerTransport...');
-            const transport = new StreamableHTTPServerTransport({
-              sessionIdGenerator: undefined,
-              enableJsonResponse: true,
-            });
-            console.log('[MCP Server] Transport created successfully');
+            console.log('[MCP Server] Processing request directly with tool handler...');
 
-            // Add transport event listeners for debugging
-            if (transport.onmessage) {
-              const originalOnMessage = transport.onmessage;
-              transport.onmessage = function(...args: any[]) {
-                console.log('[MCP Server] Transport onmessage called with:', args);
-                return originalOnMessage.apply(this, args);
-              };
-            }
+            // Parse the request
+            const request = jsonBody;
+            console.log('[MCP Server] Request method:', request.method);
+            console.log('[MCP Server] Request id:', request.id);
 
-            if (transport.onerror) {
-              const originalOnError = transport.onerror;
-              transport.onerror = function(...args: any[]) {
-                console.log('[MCP Server] Transport onerror called with:', args);
-                return originalOnError.apply(this, args);
-              };
-            }
-
-            socket.on("close", () => {
-              console.log('[MCP Server] Socket closed, closing transport');
-              transport.close();
-            });
-
-            console.log('[MCP Server] Connecting transport to server...');
-            console.log('[MCP Server] Current server exists?', !!currentServer);
+            let response: any;
 
             try {
-              await currentServer?.connect(transport);
-              console.log('[MCP Server] Transport connected successfully!');
+              if (request.method === 'initialize') {
+                console.log('[MCP Server] Handling initialize request');
+                response = {
+                  jsonrpc: '2.0',
+                  id: request.id,
+                  result: {
+                    protocolVersion: '2025-06-18',
+                    capabilities: {
+                      tools: { listChanged: true }
+                    },
+                    serverInfo: {
+                      name: 'Blockbench MCP',
+                      version: VERSION
+                    }
+                  }
+                };
+              } else if (request.method === 'tools/list') {
+                console.log('[MCP Server] Handling tools/list request');
+                // Get the list of tools from the tools object
+                const toolsList = Object.entries(tools).filter(([_, tool]) => tool.enabled).map(([name, tool]) => ({
+                  name,
+                  description: tool.description
+                }));
+                console.log('[MCP Server] Returning', toolsList.length, 'tools');
+                response = {
+                  jsonrpc: '2.0',
+                  id: request.id,
+                  result: {
+                    tools: toolsList
+                  }
+                };
+              } else if (request.method === 'tools/call') {
+                console.log('[MCP Server] Handling tools/call request for:', request.params.name);
+
+                // TEMPORARY: Just send back a success message
+                // TODO: Actually call the tool handler through the MCP server
+                response = {
+                  jsonrpc: '2.0',
+                  id: request.id,
+                  result: {
+                    content: [{
+                      type: 'text',
+                      text: `Tool ${request.params.name} received with args: ${JSON.stringify(request.params.arguments)}`
+                    }]
+                  }
+                };
+              } else {
+                console.log('[MCP Server] Unknown method:', request.method);
+                response = {
+                  jsonrpc: '2.0',
+                  id: request.id,
+                  error: {
+                    code: -32601,
+                    message: `Method not found: ${request.method}`
+                  }
+                };
+              }
+
+              console.log('[MCP Server] Sending response:', JSON.stringify(response).substring(0, 200));
+
+              // Send the response
+              res.writeHead(200, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify(response));
+
+              console.log('[MCP Server] Response sent successfully');
+              console.log('[MCP Server] Headers sent?', headersSent);
+              console.log('[MCP Server] Finished?', finished);
+
             } catch (err) {
-              console.error('[MCP Server] Error connecting transport:', err);
-              throw err;
+              console.error('[MCP Server] Error handling request:', err);
+              response = {
+                jsonrpc: '2.0',
+                id: request.id,
+                error: {
+                  code: -32603,
+                  message: `Internal error: ${err}`
+                }
+              };
+              res.writeHead(500, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify(response));
             }
-
-            console.log('[MCP Server] Calling transport.handleRequest...');
-            console.log('[MCP Server] Request object keys:', Object.keys(req));
-            console.log('[MCP Server] Response object keys:', Object.keys(res));
-            console.log('[MCP Server] JSON body:', jsonBody);
-
-            try {
-              // @ts-ignore - Our mocks have enough for the transport to work
-              await transport.handleRequest(req, res, jsonBody);
-              console.log('[MCP Server] transport.handleRequest completed successfully!');
-            } catch (err) {
-              console.error('[MCP Server] Error in transport.handleRequest:', err);
-              throw err;
-            }
-
-            console.log('[MCP Server] Request handling finished');
-            console.log('[MCP Server] Headers sent?', headersSent);
-            console.log('[MCP Server] Finished?', finished);
           } catch (error) {
             console.error("Request handling error:", error);
             socket.write("HTTP/1.1 500 Internal Server Error\r\nContent-Type: application/json\r\n\r\n");
