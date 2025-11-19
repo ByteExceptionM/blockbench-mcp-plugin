@@ -91,7 +91,8 @@ BBPlugin.register("mcp", {
           
           try {
             const jsonBody = JSON.parse(bodySection);
-            
+            console.log('[MCP Server] Received request:', JSON.stringify(jsonBody, null, 2));
+
             // Create mock req/res objects for transport with more complete API
             const req: any = {
               method,
@@ -135,6 +136,7 @@ BBPlugin.register("mcp", {
                 if (headersSent) return res;
                 headersSent = true;
                 statusCode = status;
+                console.log('[MCP Server] writeHead called with status:', status);
 
                 // Handle both (status, headers) and (status, statusMessage, headers) signatures
                 let actualHeaders = headers;
@@ -154,6 +156,7 @@ BBPlugin.register("mcp", {
                 }
                 response += "\r\n";
                 socket.write(response);
+                console.log('[MCP Server] Headers sent:', actualHeaders);
                 return res;
               },
               flushHeaders: () => {
@@ -166,6 +169,7 @@ BBPlugin.register("mcp", {
                 if (!headersSent) {
                   res.writeHead(statusCode);
                 }
+                console.log('[MCP Server] write called with data:', typeof data === 'string' ? data.substring(0, 200) : `Buffer(${data.length})`);
                 socket.write(data);
 
                 // Call callback if provided
@@ -176,7 +180,10 @@ BBPlugin.register("mcp", {
                 return true;
               },
               end: (dataOrCallback?: any, encodingOrCallback?: any, callback?: any) => {
-                if (finished) return res;
+                if (finished) {
+                  console.log('[MCP Server] end called but already finished');
+                  return res;
+                }
 
                 if (!headersSent) {
                   res.writeHead(statusCode);
@@ -193,6 +200,7 @@ BBPlugin.register("mcp", {
                   cb = typeof encodingOrCallback === 'function' ? encodingOrCallback : callback;
                 }
 
+                console.log('[MCP Server] end called with data:', data ? (typeof data === 'string' ? data.substring(0, 200) : `Buffer(${data.length})`) : 'no data');
                 if (data) socket.write(data);
                 socket.end();
                 finished = true;
@@ -226,9 +234,12 @@ BBPlugin.register("mcp", {
               transport.close();
             });
             
+            console.log('[MCP Server] Connecting transport...');
             await currentServer?.connect(transport);
+            console.log('[MCP Server] Transport connected, handling request...');
             // @ts-ignore - Our mocks have enough for the transport to work
             await transport.handleRequest(req, res, jsonBody);
+            console.log('[MCP Server] Request handled');
           } catch (error) {
             console.error("Request handling error:", error);
             socket.write("HTTP/1.1 500 Internal Server Error\r\nContent-Type: application/json\r\n\r\n");
