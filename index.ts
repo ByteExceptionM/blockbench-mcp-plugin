@@ -300,10 +300,22 @@ BBPlugin.register("mcp", {
                   const toolResult = await callToolHandler(request.params.name, request.params.arguments || {});
                   console.log('[MCP Server] Tool execution successful, result:', toolResult);
 
+                  // Normalize result - if it's a string, wrap it in the expected format
+                  let normalizedResult = toolResult;
+                  if (typeof toolResult === 'string') {
+                    console.log('[MCP Server] Converting string result to MCP format');
+                    normalizedResult = {
+                      content: [{
+                        type: 'text',
+                        text: toolResult
+                      }]
+                    };
+                  }
+
                   response = {
                     jsonrpc: '2.0',
                     id: request.id,
-                    result: toolResult
+                    result: normalizedResult
                   };
                 } catch (toolError) {
                   console.error('[MCP Server] Tool execution failed:', toolError);
