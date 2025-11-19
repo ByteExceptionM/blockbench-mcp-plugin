@@ -7,7 +7,7 @@
 /// <reference types="blockbench-types" />
 import { VERSION } from "@/lib/constants";
 import { getServer } from "@/server/server";
-import { tools } from "@/lib/factories";
+import { tools, callToolHandler } from "@/lib/factories";
 import { resources, prompts } from "@/server";
 import { uiSetup, uiTeardown } from "@/ui";
 import { settingsSetup, settingsTeardown } from "@/ui/settings";
@@ -293,19 +293,29 @@ BBPlugin.register("mcp", {
                 };
               } else if (request.method === 'tools/call') {
                 console.log('[MCP Server] Handling tools/call request for:', request.params.name);
+                console.log('[MCP Server] Tool arguments:', JSON.stringify(request.params.arguments));
 
-                // TEMPORARY: Just send back a success message
-                // TODO: Actually call the tool handler through the MCP server
-                response = {
-                  jsonrpc: '2.0',
-                  id: request.id,
-                  result: {
-                    content: [{
-                      type: 'text',
-                      text: `Tool ${request.params.name} received with args: ${JSON.stringify(request.params.arguments)}`
-                    }]
-                  }
-                };
+                try {
+                  // Call the actual tool handler
+                  const toolResult = await callToolHandler(request.params.name, request.params.arguments || {});
+                  console.log('[MCP Server] Tool execution successful, result:', toolResult);
+
+                  response = {
+                    jsonrpc: '2.0',
+                    id: request.id,
+                    result: toolResult
+                  };
+                } catch (toolError) {
+                  console.error('[MCP Server] Tool execution failed:', toolError);
+                  response = {
+                    jsonrpc: '2.0',
+                    id: request.id,
+                    error: {
+                      code: -32000,
+                      message: `Tool execution failed: ${toolError}`
+                    }
+                  };
+                }
               } else {
                 console.log('[MCP Server] Unknown method:', request.method);
                 response = {
